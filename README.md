@@ -2,6 +2,8 @@
 
 A web application that fetches GitHub PRs/Issues and uses Claude AI to generate summaries, risk tags, and test checklists.
 
+![PR & Issue Summarizer UI](PR_page.png)
+
 ## Tech Stack
 
 - **Frontend**: Next.js 14 (TypeScript) with Tailwind CSS
