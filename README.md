@@ -10,7 +10,7 @@ A web application that fetches GitHub PRs/Issues and uses Claude AI to generate 
 - **Backend**: FastAPI (Python)
 - **APIs**: GitHub REST API, Anthropic Claude API
 - **Auth**: GitHub Personal Access Token (user-provided)
-- **Deployment**: AWS Amplify (frontend) + AWS App Runner (backend)
+- **Deployment**: Vercel (frontend) + AWS App Runner (backend)
 
 ## Project Structure
 
@@ -137,30 +137,42 @@ curl -X POST http://localhost:8000/api/v1/repos/facebook/react/pulls/123 \
   -d '{"github_token": "ghp_your_token_here"}'
 ```
 
-## AWS Deployment
-
-For detailed deployment instructions, see [docs/AWS_DEPLOYMENT.md](docs/AWS_DEPLOYMENT.md).
-
-### Quick Start
-
-```bash
-# Deploy backend to ECR (then create App Runner service)
-./scripts/deploy-backend.sh
-```
+## Deployment
 
 ### Backend (AWS App Runner)
 
-1. Run the deployment script or manually push Docker image to ECR
-2. Create an App Runner service with:
-   - Port: 8000
-   - Health check path: `/health`
-   - Environment variables: `ANTHROPIC_API_KEY`, `ALLOWED_ORIGINS`, `LOG_LEVEL`
+Automated via GitHub Actions on push to `main` (when `backend/` files change).
 
-### Frontend (AWS Amplify)
+**Initial setup (one-time):**
+1. Run `./scripts/deploy-backend.sh --create-app-runner` to create ECR repo and App Runner service
+2. In App Runner console, set environment variables: `ANTHROPIC_API_KEY`, `ALLOWED_ORIGINS`
+3. Note the App Runner service URL and ARN
 
-1. Connect your GitHub repository to Amplify
-2. Set root directory to `pr-summarizer/frontend`
-3. Add environment variable: `NEXT_PUBLIC_API_URL` = Your App Runner URL
+**Required GitHub repo secrets:**
+| Secret | Description |
+|--------|-------------|
+| `AWS_ACCESS_KEY_ID` | IAM user access key |
+| `AWS_SECRET_ACCESS_KEY` | IAM user secret key |
+| `AWS_REGION` | AWS region (default: us-east-1) |
+| `APP_RUNNER_SERVICE_ARN` | ARN from App Runner console |
+
+After setup, every push to `main` that changes `backend/` files auto-deploys.
+
+### Frontend (Vercel)
+
+1. Import the repo in [Vercel](https://vercel.com/new)
+2. Set root directory to `frontend`
+3. Add environment variable: `NEXT_PUBLIC_API_URL` = your App Runner URL
+4. Deploy — Vercel auto-deploys on every push to `main`
+
+### Manual Backend Deployment
+
+```bash
+./scripts/deploy-backend.sh              # push to ECR only
+./scripts/deploy-backend.sh --create-app-runner  # also create App Runner service
+```
+
+For detailed AWS setup instructions, see [docs/AWS_DEPLOYMENT.md](docs/AWS_DEPLOYMENT.md).
 
 ## Environment Variables
 
