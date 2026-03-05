@@ -6,6 +6,7 @@ class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
 
     anthropic_api_key: str = ""
+    aws_region: str = "us-east-1"
     allowed_origins: str = "http://localhost:3000"
     log_level: str = "INFO"
     app_version: str = "1.0.0"

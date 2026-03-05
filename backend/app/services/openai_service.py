@@ -38,12 +38,12 @@ def extract_json(text: str) -> dict:
 
 
 class OpenAIService:
-    """Service for generating summaries using Claude API."""
+    """Service for generating summaries using Claude via Amazon Bedrock."""
 
     def __init__(self):
         settings = get_settings()
-        self.client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
-        self.model = "claude-3-haiku-20240307"  # Faster model with better rate limits
+        self.client = anthropic.AnthropicBedrock(aws_region=settings.aws_region)
+        self.model = "anthropic.claude-3-haiku-20240307-v1:0"
 
     async def summarize_pr(self, pr_data: dict[str, Any]) -> PRSummary:
         """Generate summary for a pull request."""
