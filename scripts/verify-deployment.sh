@@ -33,7 +33,7 @@ if [ -z "$1" ]; then
     echo ""
     echo "Examples:"
     echo "  $0 https://xxxxx.us-east-1.awsapprunner.com"
-    echo "  $0 https://xxxxx.us-east-1.awsapprunner.com https://main.d123456.amplifyapp.com"
+    echo "  $0 https://xxxxx.us-east-1.awsapprunner.com https://your-app.vercel.app"
     exit 1
 fi
 
