@@ -31,6 +31,9 @@ Thumbs.db
 *.log
 npm-debug.log*
 
+# Local test tokens
+.github_test_token*
+
 # Testing
 .coverage
 htmlcov/
