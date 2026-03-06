@@ -15,7 +15,7 @@ source venv/bin/activate
 pip install -r requirements.txt
 uvicorn app.main:app --reload          # runs on :8000
 ```
-Requires `backend/.env` with `ANTHROPIC_API_KEY`.
+Requires `backend/.env` with `AWS_REGION` (defaults to `us-east-1`).
 
 ### Frontend (Next.js/TypeScript)
 ```bash
@@ -40,7 +40,7 @@ docker-compose up --build               # backend only, on :8000
 - **`routers/github.py`** — All API endpoints under `/api/v1/repos/{owner}/{repo}/`. PR list endpoints summarize up to 5 items with a 1-second delay between Claude API calls to avoid rate limiting
 - **`routers/health.py`** — `GET /health`
 - **`services/github_service.py`** — GitHub REST API client using `httpx.AsyncClient`. Fetches PRs, issues, diffs, and comments
-- **`services/openai_service.py`** — **Despite the filename**, this uses the Anthropic SDK (`claude-3-haiku-20240307`). Named `OpenAIService` but wraps `anthropic.Anthropic`. Contains `extract_json()` helper for parsing Claude responses from text/markdown. Builds structured prompts and returns `PRSummary`/`IssueSummary` Pydantic models
+- **`services/openai_service.py`** — **Despite the filename**, this uses Claude via Amazon Bedrock (`anthropic.AnthropicBedrock`). Named `OpenAIService` but wraps `anthropic.AnthropicBedrock`. Contains `extract_json()` helper for parsing Claude responses from text/markdown. Builds structured prompts and returns `PRSummary`/`IssueSummary` Pydantic models
 - **`models/schemas.py`** — All Pydantic models: request/response types, `RiskTag` and `Priority` enums
 
 ### Frontend (`frontend/src/`)
@@ -69,3 +69,8 @@ docker-compose up --build               # backend only, on :8000
 - **Frontend**: Vercel, auto-deploys on push to `main`. Root directory set to `frontend/` in Vercel dashboard
 - **Required GitHub secrets**: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`, `APP_RUNNER_SERVICE_ARN`
 - Detailed AWS setup guide: `docs/AWS_DEPLOYMENT.md`
+
+## Debugging Deployments
+
+- **Always check logs when a deployment fails.** Use `gh run view <run-id> --log-failed` for GitHub Actions failures. For App Runner failures, check CloudWatch logs and `aws apprunner describe-service` for status.
+- App Runner deployments fail if the service is in `OPERATION_IN_PROGRESS` state — wait for it to reach `RUNNING` before triggering another deployment.
