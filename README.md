@@ -8,7 +8,7 @@ A web application that fetches GitHub PRs/Issues and uses Claude AI to generate 
 
 - **Frontend**: Next.js 14 (TypeScript) with Tailwind CSS
 - **Backend**: FastAPI (Python)
-- **APIs**: GitHub REST API, Anthropic Claude API
+- **APIs**: GitHub REST API, Claude AI via Amazon Bedrock
 - **Auth**: GitHub Personal Access Token (user-provided)
 - **Deployment**: Vercel (frontend) + AWS App Runner (backend)
 
@@ -48,7 +48,7 @@ pr-summarizer/
 
 - Python 3.11+
 - Node.js 18+
-- Anthropic API key (for Claude AI)
+- AWS credentials with Bedrock access (for Claude AI)
 - GitHub Personal Access Token (for users)
 
 ## Local Development
@@ -145,7 +145,7 @@ Automated via GitHub Actions on push to `main` (when `backend/` files change).
 
 **Initial setup (one-time):**
 1. Run `./scripts/deploy-backend.sh --create-app-runner` to create ECR repo and App Runner service
-2. In App Runner console, set environment variables: `ANTHROPIC_API_KEY`, `ALLOWED_ORIGINS`
+2. In App Runner console, set environment variables: `ALLOWED_ORIGINS`, `AWS_REGION`
 3. Note the App Runner service URL and ARN
 
 **Required GitHub repo secrets:**
@@ -178,8 +178,8 @@ For detailed AWS setup instructions, see [docs/AWS_DEPLOYMENT.md](docs/AWS_DEPLO
 
 ### Backend (.env)
 ```
-ANTHROPIC_API_KEY=sk-ant-your-api-key
-ALLOWED_ORIGINS=http://localhost:3000,https://your-amplify-domain.amplifyapp.com
+AWS_REGION=us-east-1
+ALLOWED_ORIGINS=http://localhost:3000,https://your-vercel-domain.vercel.app
 LOG_LEVEL=INFO
 ```
 
