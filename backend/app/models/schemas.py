@@ -25,7 +25,7 @@ class Priority(str, Enum):
 
 class GitHubTokenRequest(BaseModel):
     """Base request with GitHub token."""
-    github_token: str = Field(..., description="GitHub Personal Access Token")
+    github_token: str = Field("", description="GitHub Personal Access Token (optional for public repos)")
 
 
 class PRRequest(GitHubTokenRequest):

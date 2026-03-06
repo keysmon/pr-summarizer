@@ -10,13 +10,14 @@ GITHUB_API_BASE = "https://api.github.com"
 class GitHubService:
     """Service for interacting with GitHub API."""
 
-    def __init__(self, token: str):
+    def __init__(self, token: str = ""):
         self.token = token
         self.headers = {
-            "Authorization": f"Bearer {token}",
             "Accept": "application/vnd.github.v3+json",
             "X-GitHub-Api-Version": "2022-11-28",
         }
+        if token:
+            self.headers["Authorization"] = f"Bearer {token}"
 
     async def fetch_pull_requests(
         self, owner: str, repo: str, state: str = "open", per_page: int = 30

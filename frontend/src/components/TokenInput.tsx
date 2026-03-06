@@ -1,18 +1,18 @@
-'use client';
+"use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect } from "react";
 
 interface TokenInputProps {
   onTokenChange: (token: string) => void;
 }
 
 export default function TokenInput({ onTokenChange }: TokenInputProps) {
-  const [token, setToken] = useState('');
+  const [token, setToken] = useState("");
   const [isVisible, setIsVisible] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
 
   useEffect(() => {
-    const savedToken = localStorage.getItem('github_token');
+    const savedToken = localStorage.getItem("github_token");
     if (savedToken) {
       setToken(savedToken);
       setIsSaved(true);
@@ -22,24 +22,24 @@ export default function TokenInput({ onTokenChange }: TokenInputProps) {
 
   const handleSave = () => {
     if (token) {
-      localStorage.setItem('github_token', token);
+      localStorage.setItem("github_token", token);
       setIsSaved(true);
       onTokenChange(token);
     }
   };
 
   const handleClear = () => {
-    localStorage.removeItem('github_token');
-    setToken('');
+    localStorage.removeItem("github_token");
+    setToken("");
     setIsSaved(false);
-    onTokenChange('');
+    onTokenChange("");
   };
 
   return (
     <div className="bg-white rounded-lg shadow p-4">
       <div className="flex items-center justify-between mb-2">
         <label className="block text-sm font-medium text-gray-700">
-          GitHub Personal Access Token
+          GitHub Personal Access Token (optional)
         </label>
         {isSaved && (
           <span className="text-xs text-green-600 flex items-center gap-1">
@@ -57,7 +57,7 @@ export default function TokenInput({ onTokenChange }: TokenInputProps) {
       <div className="flex gap-2">
         <div className="relative flex-1">
           <input
-            type={isVisible ? 'text' : 'password'}
+            type={isVisible ? "text" : "password"}
             value={token}
             onChange={(e) => {
               setToken(e.target.value);
@@ -72,7 +72,12 @@ export default function TokenInput({ onTokenChange }: TokenInputProps) {
             className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
           >
             {isVisible ? (
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg
+                className="w-5 h-5"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
                 <path
                   strokeLinecap="round"
                   strokeLinejoin="round"
@@ -81,7 +86,12 @@ export default function TokenInput({ onTokenChange }: TokenInputProps) {
                 />
               </svg>
             ) : (
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg
+                className="w-5 h-5"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
                 <path
                   strokeLinecap="round"
                   strokeLinejoin="round"
@@ -115,7 +125,7 @@ export default function TokenInput({ onTokenChange }: TokenInputProps) {
         )}
       </div>
       <p className="mt-2 text-xs text-gray-500">
-        Create a token at{' '}
+        Create a token at{" "}
         <a
           href="https://github.com/settings/tokens"
           target="_blank"
@@ -124,7 +134,8 @@ export default function TokenInput({ onTokenChange }: TokenInputProps) {
         >
           GitHub Settings
         </a>
-        . Requires repo read access.
+        . Optional for public repos. Required for private repos and higher rate
+        limits.
       </p>
     </div>
   );
