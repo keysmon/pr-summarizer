@@ -1,30 +1,31 @@
 # AWS Deployment Guide - PR & Issue Summarizer
 
-This guide walks you through deploying the PR & Issue Summarizer to AWS using:
-- **Backend**: AWS App Runner (containerized FastAPI)
-- **Frontend**: AWS Amplify (Next.js SSR)
+This guide walks you through deploying the PR & Issue Summarizer to AWS and Vercel:
+- **Backend**: AWS App Runner (containerized FastAPI) with Amazon Bedrock for Claude AI
+- **Frontend**: Vercel (Next.js static)
+- **CI/CD**: GitHub Actions (backend), Vercel auto-deploy (frontend)
 
 ## Prerequisites
 
-Before starting, ensure you have:
-
-1. **AWS Account** with appropriate permissions for:
+1. **AWS Account** with permissions for:
    - ECR (Elastic Container Registry)
    - App Runner
-   - Amplify
+   - Bedrock (Claude model access)
    - IAM (for creating roles)
 
 2. **AWS CLI** installed and configured:
    ```bash
    aws configure
-   # Enter your AWS Access Key ID, Secret Access Key, and region
+   # Enter your AWS Access Key ID, Secret Access Key, and region (us-east-1)
    ```
 
 3. **Docker** installed and running locally
 
-4. **GitHub repository** with your code (for Amplify CI/CD)
+4. **GitHub repository** with your code
 
-5. **Anthropic API Key** for Claude AI summaries
+5. **Vercel account** linked to your GitHub
+
+6. **Bedrock model access**: In the AWS Console, go to Bedrock → Model access → Request access to Claude models. You may need to submit a use case form (~15 min to process).
 
 ---
 
@@ -32,17 +33,14 @@ Before starting, ensure you have:
 
 ### Option A: Using the Deployment Script (Recommended)
 
-We provide a deployment script that automates ECR setup and image pushing.
-
 ```bash
-# Make the script executable
 chmod +x scripts/deploy-backend.sh
 
-# Run the deployment script
-./scripts/deploy-backend.sh
+# Create ECR repo and App Runner service
+./scripts/deploy-backend.sh --create-app-runner
 
-# Or with custom options:
-./scripts/deploy-backend.sh --region us-west-2 --tag v1.0.0
+# Or push to ECR only (if service already exists)
+./scripts/deploy-backend.sh
 ```
 
 **Script Options:**
@@ -67,171 +65,99 @@ aws ecr create-repository \
 #### 1.2 Build and Push Docker Image
 
 ```bash
-# Get your AWS account ID
 AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 
 # Login to ECR
 aws ecr get-login-password --region us-east-1 | \
     docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.us-east-1.amazonaws.com
 
-# Build the image
-cd pr-summarizer/backend
-docker build -t pr-summarizer-backend .
+# Build the image (must be amd64 for App Runner)
+cd backend
+docker build --platform linux/amd64 -t pr-summarizer-backend .
 
-# Tag for ECR
+# Tag and push
 docker tag pr-summarizer-backend:latest \
     ${AWS_ACCOUNT_ID}.dkr.ecr.us-east-1.amazonaws.com/pr-summarizer-backend:latest
-
-# Push to ECR
 docker push ${AWS_ACCOUNT_ID}.dkr.ecr.us-east-1.amazonaws.com/pr-summarizer-backend:latest
 ```
 
+> **Important**: App Runner only supports `linux/amd64` images. If you're building on an ARM Mac, always use `--platform linux/amd64`.
+
 #### 1.3 Create App Runner Service
 
-**Via AWS Console (Recommended for first-time setup):**
+**Via AWS Console:**
 
-1. Navigate to **AWS App Runner** → **Create Service**
-2. **Source Configuration:**
-   - Source: Container registry
-   - Provider: Amazon ECR
-   - Browse and select your image
-3. **Deployment Settings:**
-   - Deployment trigger: Manual (or Automatic for CI/CD)
-4. **Configure Service:**
+1. Navigate to **App Runner** → **Create Service**
+2. **Source**: Container registry → Amazon ECR → Select your image
+3. **Service settings:**
    - Service name: `pr-summarizer-api`
-   - CPU: 1 vCPU
-   - Memory: 2 GB
+   - CPU: 1 vCPU, Memory: 2 GB
    - Port: 8000
-5. **Health Check:**
-   - Protocol: HTTP
-   - Path: `/health`
-6. **Environment Variables:**
+4. **Health check**: HTTP, Path: `/health`
+5. **Environment Variables:**
 
-   | Variable | Value | Description |
-   |----------|-------|-------------|
-   | `ANTHROPIC_API_KEY` | `sk-ant-...` | Your Claude API key |
-   | `ALLOWED_ORIGINS` | `*` | Update after Amplify deploy |
-   | `LOG_LEVEL` | `INFO` | Logging level |
+   | Variable | Value |
+   |----------|-------|
+   | `ALLOWED_ORIGINS` | `https://your-vercel-domain.vercel.app` |
+   | `AWS_REGION` | `us-east-1` |
+   | `LOG_LEVEL` | `INFO` |
 
+6. **Instance role**: Attach a role with `bedrock:InvokeModel` permission
 7. Click **Create & deploy**
 
-**Via AWS CLI:**
+#### 1.4 Create Bedrock Instance Role
+
+The App Runner instance needs permission to call Bedrock:
 
 ```bash
-# Create IAM role for ECR access
+# Create the instance role
 aws iam create-role \
-    --role-name AppRunnerECRAccessRole \
+    --role-name AppRunnerBedrockRole \
     --assume-role-policy-document '{
         "Version": "2012-10-17",
         "Statement": [{
             "Effect": "Allow",
-            "Principal": {"Service": "build.apprunner.amazonaws.com"},
+            "Principal": {"Service": "tasks.apprunner.amazonaws.com"},
             "Action": "sts:AssumeRole"
         }]
     }'
 
-aws iam attach-role-policy \
-    --role-name AppRunnerECRAccessRole \
-    --policy-arn arn:aws:iam::aws:policy/service-role/AWSAppRunnerServicePolicyForECRAccess
-
-# Create App Runner service
-aws apprunner create-service \
-    --service-name pr-summarizer-api \
-    --source-configuration '{
-        "AuthenticationConfiguration": {
-            "AccessRoleArn": "arn:aws:iam::YOUR_ACCOUNT_ID:role/AppRunnerECRAccessRole"
-        },
-        "ImageRepository": {
-            "ImageIdentifier": "YOUR_ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/pr-summarizer-backend:latest",
-            "ImageRepositoryType": "ECR",
-            "ImageConfiguration": {
-                "Port": "8000",
-                "RuntimeEnvironmentVariables": {
-                    "ANTHROPIC_API_KEY": "sk-ant-your-key",
-                    "ALLOWED_ORIGINS": "*",
-                    "LOG_LEVEL": "INFO"
-                }
-            }
-        }
-    }' \
-    --instance-configuration '{"Cpu": "1024", "Memory": "2048"}' \
-    --health-check-configuration '{"Protocol": "HTTP", "Path": "/health"}'
+# Attach Bedrock access
+aws iam put-role-policy \
+    --role-name AppRunnerBedrockRole \
+    --policy-name BedrockInvokeAccess \
+    --policy-document '{
+        "Version": "2012-10-17",
+        "Statement": [{
+            "Effect": "Allow",
+            "Action": "bedrock:InvokeModel",
+            "Resource": "arn:aws:bedrock:*::foundation-model/anthropic.*"
+        }]
+    }'
 ```
 
-#### 1.4 Note the App Runner URL
+#### 1.5 Verify Backend
 
-After deployment completes, note the service URL:
-```
-https://xxxxx.us-east-1.awsapprunner.com
-```
-
-Verify the backend is working:
 ```bash
-curl https://xxxxx.us-east-1.awsapprunner.com/health
+curl https://YOUR-APP-RUNNER-URL/health
 # Expected: {"status":"healthy","version":"1.0.0"}
 ```
 
 ---
 
-## Phase 2: Frontend Deployment (AWS Amplify)
+## Phase 2: Frontend Deployment (Vercel)
 
-### 2.1 Push Code to GitHub
-
-Ensure your code is in a GitHub repository. Amplify will use this for CI/CD.
-
-### 2.2 Create Amplify App
-
-1. Navigate to **AWS Amplify** → **New app** → **Host web app**
-2. **Connect Repository:**
-   - Select GitHub and authorize
-   - Choose your repository and branch (e.g., `main`)
-3. **Build Settings:**
-   - App name: `pr-summarizer`
-   - Monorepo settings: Check "My app is a monorepo"
-   - Root directory: `pr-summarizer/frontend`
-   - Build command: `npm run build`
-   - Output directory: `.next`
-   - Framework: Next.js - SSR
-
-4. **Advanced Settings** → **Environment variables:**
+1. Go to [vercel.com/new](https://vercel.com/new) and import your GitHub repo
+2. Set **Root Directory** to `frontend`
+3. Add environment variable:
 
    | Variable | Value |
    |----------|-------|
-   | `NEXT_PUBLIC_API_URL` | `https://xxxxx.us-east-1.awsapprunner.com` |
+   | `NEXT_PUBLIC_API_URL` | `https://YOUR-APP-RUNNER-URL` |
 
-5. Click **Save and deploy**
+4. Click **Deploy**
 
-### 2.3 Amplify Build Specification
-
-The `amplify.yml` file is already configured in `frontend/amplify.yml`:
-
-```yaml
-version: 1
-frontend:
-  phases:
-    preBuild:
-      commands:
-        - npm ci
-    build:
-      commands:
-        - echo "Building with NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL"
-        - npm run build
-  artifacts:
-    baseDirectory: .next
-    files:
-      - '**/*'
-  cache:
-    paths:
-      - node_modules/**/*
-      - .next/cache/**/*
-```
-
-### 2.4 Note the Amplify URL
-
-After deployment, note your Amplify URL:
-```
-https://main.d1234567890.amplifyapp.com
-```
+Vercel auto-deploys on every push to `main`.
 
 ---
 
@@ -239,77 +165,57 @@ https://main.d1234567890.amplifyapp.com
 
 ### 3.1 Update CORS in App Runner
 
-Now that you have the Amplify URL, update the backend CORS settings:
+After getting your Vercel URL, update the backend CORS:
 
 1. Go to **App Runner** → **pr-summarizer-api** → **Configuration**
-2. Update the `ALLOWED_ORIGINS` environment variable:
-   ```
-   https://main.d1234567890.amplifyapp.com
-   ```
+2. Update `ALLOWED_ORIGINS` to your Vercel domain (e.g., `https://your-app.vercel.app`)
 3. Click **Apply configuration changes**
-4. Wait for the service to redeploy
+4. Wait for the service to reach `RUNNING` status
 
-### 3.2 Custom Domain (Optional)
+### 3.2 Set Up GitHub Actions CI/CD
 
-**For Amplify:**
-1. Amplify Console → Domain management → Add domain
-2. Enter your domain name
-3. Follow the DNS verification steps (add CNAME records)
+The workflow at `.github/workflows/deploy-backend.yml` auto-deploys on push to `main`.
 
-**For App Runner:**
-1. App Runner → pr-summarizer-api → Custom domains
-2. Click "Link domain"
-3. Add the CNAME record to your DNS provider
+**Required GitHub repo secrets:**
+
+| Secret | Description |
+|--------|-------------|
+| `AWS_ACCESS_KEY_ID` | IAM user access key |
+| `AWS_SECRET_ACCESS_KEY` | IAM user secret key |
+| `AWS_REGION` | AWS region (default: us-east-1) |
+| `APP_RUNNER_SERVICE_ARN` | ARN from App Runner console |
 
 ---
 
 ## Verification Checklist
 
-### 1. Backend Health Check
-```bash
-curl https://YOUR-APP-RUNNER-URL/health
-# Expected: {"status":"healthy","version":"1.0.0"}
-```
-
-### 2. Frontend Test
-1. Open `https://YOUR-AMPLIFY-URL`
-2. Enter a GitHub Personal Access Token
-3. Enter a repository (e.g., `facebook/react`)
-4. Verify PRs load with AI summaries
-
-### 3. CORS Test
-Open browser DevTools → Network tab → Verify no CORS errors on API calls
+1. **Backend health**: `curl https://YOUR-APP-RUNNER-URL/health`
+2. **Frontend**: Open your Vercel URL, enter a public repo (e.g., `facebook/react`), verify summaries load
+3. **CORS**: Check browser DevTools → Network tab for CORS errors
+4. **CI/CD**: Push a change to `backend/` and verify GitHub Actions deploys successfully
 
 ---
 
 ## Troubleshooting
 
-### Backend Issues
+### App Runner Deployment Fails
+- Check CloudWatch logs: App Runner → your service → Logs
+- Use `gh run view <run-id> --log-failed` for GitHub Actions failures
+- App Runner must be in `RUNNING` state before triggering deployments — if it's `OPERATION_IN_PROGRESS`, wait
 
-**Container won't start:**
-- Check App Runner logs in CloudWatch
-- Verify the health check path is `/health`
-- Ensure port 8000 is exposed
+### Docker Image Architecture
+- App Runner only supports `linux/amd64`
+- On ARM Macs, always build with `--platform linux/amd64`
+- Verify with: `docker inspect <image> | grep Architecture`
 
-**CORS errors:**
-- Verify `ALLOWED_ORIGINS` includes your Amplify domain
-- Ensure the origin doesn't have a trailing slash
+### Bedrock Access Denied
+- Verify the App Runner instance role has `bedrock:InvokeModel` permission
+- Check that you've requested model access in the Bedrock console
+- Model access requests can take ~15 minutes to process
 
-**AI summaries not working:**
-- Verify `ANTHROPIC_API_KEY` is set correctly
-- Check CloudWatch logs for API errors
-
-### Frontend Issues
-
-**Build failures:**
-- Check Amplify build logs
-- Verify `NEXT_PUBLIC_API_URL` is set before build
-- Ensure `npm ci` can install all dependencies
-
-**API calls failing:**
-- Verify the API URL is correct
-- Check browser network tab for actual error responses
-- Ensure CORS is configured correctly
+### CORS Errors
+- Verify `ALLOWED_ORIGINS` matches your Vercel domain exactly (no trailing slash)
+- After updating, wait for App Runner to reach `RUNNING` status
 
 ---
 
@@ -317,98 +223,19 @@ Open browser DevTools → Network tab → Verify no CORS errors on API calls
 
 | Service | Estimated Cost |
 |---------|---------------|
-| App Runner (1 vCPU, 2GB, low traffic) | ~$5-15 |
-| Amplify Hosting (SSR) | ~$0-5 (free tier covers most) |
-| ECR Storage | ~$0.10/GB |
-| CloudWatch Logs | ~$0.50/GB ingested |
-| Claude API | Pay per use |
-| **Total** | **~$10-25/month** |
-
----
-
-## Rollback Procedures
-
-### App Runner Rollback
-
-```bash
-# List previous deployments
-aws apprunner list-operations \
-    --service-arn YOUR_SERVICE_ARN
-
-# Redeploy previous image version
-aws apprunner update-service \
-    --service-arn YOUR_SERVICE_ARN \
-    --source-configuration '{"ImageRepository": {"ImageIdentifier": "YOUR_ECR_URI:previous-tag"}}'
-```
-
-### Amplify Rollback
-
-1. Go to Amplify Console → Your App → Hosting
-2. Find the previous successful build
-3. Click "Redeploy this version"
+| App Runner (1 vCPU, 2GB, low traffic) | ~$7-15 |
+| ECR Storage | ~$0.10 |
+| Bedrock (Claude Haiku) | ~$0.001/request |
+| Vercel | Free (Hobby plan) |
+| GitHub Actions | Free (public repos) |
+| **Total** | **~$7-15/month** |
 
 ---
 
 ## Security Best Practices
 
-- [ ] Store `ANTHROPIC_API_KEY` as environment variable (never in code)
-- [ ] Restrict `ALLOWED_ORIGINS` to specific domains only
-- [ ] Enable ECR image scanning for vulnerabilities
-- [ ] Use IAM roles with least-privilege access
-- [ ] Enable AWS CloudTrail for audit logging
-- [ ] Consider adding AWS WAF for additional protection
-- [ ] Rotate API keys periodically
-- [ ] Monitor CloudWatch metrics and set up alerts
-
----
-
-## CI/CD Automation
-
-### Automatic Backend Deployments
-
-Enable auto-deployments in App Runner:
-1. App Runner → pr-summarizer-api → Configuration
-2. Under "Deployment settings", enable automatic deployments
-3. New images pushed to ECR will automatically deploy
-
-### GitHub Actions (Optional)
-
-Create `.github/workflows/deploy.yml`:
-
-```yaml
-name: Deploy to AWS
-
-on:
-  push:
-    branches: [main]
-
-jobs:
-  deploy-backend:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-east-1
-
-      - name: Login to Amazon ECR
-        id: login-ecr
-        uses: aws-actions/amazon-ecr-login@v2
-
-      - name: Build and push Docker image
-        env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          IMAGE_TAG: ${{ github.sha }}
-        run: |
-          cd pr-summarizer/backend
-          docker build -t $ECR_REGISTRY/pr-summarizer-backend:$IMAGE_TAG .
-          docker push $ECR_REGISTRY/pr-summarizer-backend:$IMAGE_TAG
-          docker tag $ECR_REGISTRY/pr-summarizer-backend:$IMAGE_TAG $ECR_REGISTRY/pr-summarizer-backend:latest
-          docker push $ECR_REGISTRY/pr-summarizer-backend:latest
-```
-
-Amplify automatically deploys on push to the connected branch.
+- Restrict `ALLOWED_ORIGINS` to your specific Vercel domain
+- Use IAM roles with least-privilege (separate ECR access role and Bedrock instance role)
+- Enable ECR image scanning for vulnerabilities
+- GitHub tokens are never stored server-side — passed per-request
+- Rotate AWS credentials periodically
