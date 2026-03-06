@@ -42,14 +42,14 @@ class OpenAIService:
 
     def __init__(self):
         settings = get_settings()
-        self.client = anthropic.AnthropicBedrock(aws_region=settings.aws_region)
+        self.client = anthropic.AsyncAnthropicBedrock(aws_region=settings.aws_region)
         self.model = "anthropic.claude-3-haiku-20240307-v1:0"
 
     async def summarize_pr(self, pr_data: dict[str, Any]) -> PRSummary:
         """Generate summary for a pull request."""
         prompt = self._build_pr_prompt(pr_data)
 
-        message = self.client.messages.create(
+        message = await self.client.messages.create(
             model=self.model,
             max_tokens=1024,
             messages=[
@@ -93,7 +93,7 @@ Respond ONLY with valid JSON (no markdown, no code blocks):
         """Generate summary for an issue."""
         prompt = self._build_issue_prompt(issue_data)
 
-        message = self.client.messages.create(
+        message = await self.client.messages.create(
             model=self.model,
             max_tokens=1024,
             messages=[

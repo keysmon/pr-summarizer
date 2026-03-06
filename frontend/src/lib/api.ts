@@ -22,6 +22,147 @@ export async function checkHealth(): Promise<HealthResponse> {
   return response.data;
 }
 
+// --- SSE streaming functions ---
+
+interface StreamCallbacks<T> {
+  onMetadata: (totalCount: number, processingCount: number) => void;
+  onSummary: (summary: T) => void;
+  onDone: () => void;
+  onError: (error: string) => void;
+}
+
+export function streamPRs(
+  owner: string,
+  repo: string,
+  githubToken: string,
+  callbacks: StreamCallbacks<PRSummary>
+): AbortController {
+  const controller = new AbortController();
+
+  fetch(`${API_URL}/api/v1/repos/${owner}/${repo}/pulls/stream`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ github_token: githubToken }),
+    signal: controller.signal,
+  })
+    .then(async (response) => {
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ detail: 'Request failed' }));
+        callbacks.onError(error.detail || `HTTP ${response.status}`);
+        return;
+      }
+
+      const reader = response.body?.getReader();
+      if (!reader) {
+        callbacks.onError('Stream not available');
+        return;
+      }
+
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const event = JSON.parse(line.slice(6));
+              if (event.type === 'metadata') {
+                callbacks.onMetadata(event.total_count, event.processing_count);
+              } else if (event.type === 'summary') {
+                callbacks.onSummary(event.data as PRSummary);
+              } else if (event.type === 'done') {
+                callbacks.onDone();
+              }
+            } catch {
+              // skip malformed lines
+            }
+          }
+        }
+      }
+    })
+    .catch((err) => {
+      if (err.name !== 'AbortError') {
+        callbacks.onError(err.message || 'Stream failed');
+      }
+    });
+
+  return controller;
+}
+
+export function streamIssues(
+  owner: string,
+  repo: string,
+  githubToken: string,
+  callbacks: StreamCallbacks<IssueSummary>
+): AbortController {
+  const controller = new AbortController();
+
+  fetch(`${API_URL}/api/v1/repos/${owner}/${repo}/issues/stream`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ github_token: githubToken }),
+    signal: controller.signal,
+  })
+    .then(async (response) => {
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ detail: 'Request failed' }));
+        callbacks.onError(error.detail || `HTTP ${response.status}`);
+        return;
+      }
+
+      const reader = response.body?.getReader();
+      if (!reader) {
+        callbacks.onError('Stream not available');
+        return;
+      }
+
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const event = JSON.parse(line.slice(6));
+              if (event.type === 'metadata') {
+                callbacks.onMetadata(event.total_count, event.processing_count);
+              } else if (event.type === 'summary') {
+                callbacks.onSummary(event.data as IssueSummary);
+              } else if (event.type === 'done') {
+                callbacks.onDone();
+              }
+            } catch {
+              // skip malformed lines
+            }
+          }
+        }
+      }
+    })
+    .catch((err) => {
+      if (err.name !== 'AbortError') {
+        callbacks.onError(err.message || 'Stream failed');
+      }
+    });
+
+  return controller;
+}
+
+// --- Legacy batch functions (kept for backward compatibility) ---
+
 export async function fetchPRs(
   owner: string,
   repo: string,
