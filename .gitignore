@@ -18,6 +18,10 @@ build/
 *.egg-info/
 tsconfig.tsbuildinfo
 
+# Local docs
+CLAUDE.md
+docs/
+
 # IDE
 .idea/
 .vscode/
