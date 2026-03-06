@@ -9,7 +9,7 @@ A web application that fetches GitHub PRs/Issues and uses Claude AI to generate 
 - **Frontend**: Next.js 14 (TypeScript) with Tailwind CSS
 - **Backend**: FastAPI (Python)
 - **APIs**: GitHub REST API, Claude AI via Amazon Bedrock
-- **Auth**: GitHub Personal Access Token (user-provided)
+- **Auth**: GitHub Personal Access Token (optional for public repos)
 - **Deployment**: Vercel (frontend) + AWS App Runner (backend)
 
 ## Project Structure
@@ -22,7 +22,7 @@ pr-summarizer/
 │   │   ├── components/          # React components
 │   │   ├── lib/                 # API client
 │   │   └── types/               # TypeScript types
-│   ├── amplify.yml              # AWS Amplify build config
+│   ├── vercel.json              # Vercel deployment config
 │   └── package.json
 │
 ├── backend/                     # FastAPI application
@@ -49,7 +49,7 @@ pr-summarizer/
 - Python 3.11+
 - Node.js 18+
 - AWS credentials with Bedrock access (for Claude AI)
-- GitHub Personal Access Token (for users)
+- GitHub Personal Access Token (optional — only needed for private repos)
 
 ## Local Development
 
@@ -67,7 +67,7 @@ pip install -r requirements.txt
 
 # Create .env file
 cp .env.example .env
-# Edit .env and add your ANTHROPIC_API_KEY
+# Edit .env and set AWS_REGION (requires AWS credentials with Bedrock access)
 
 # Run development server
 uvicorn app.main:app --reload
@@ -108,17 +108,19 @@ GET /health
 
 ### Pull Requests
 ```
-POST /api/v1/repos/{owner}/{repo}/pulls
+POST /api/v1/repos/{owner}/{repo}/pulls           # batch response
+POST /api/v1/repos/{owner}/{repo}/pulls/stream     # SSE streaming
 POST /api/v1/repos/{owner}/{repo}/pulls/{pr_number}
 ```
 
 ### Issues
 ```
-POST /api/v1/repos/{owner}/{repo}/issues
+POST /api/v1/repos/{owner}/{repo}/issues           # batch response
+POST /api/v1/repos/{owner}/{repo}/issues/stream    # SSE streaming
 POST /api/v1/repos/{owner}/{repo}/issues/{issue_number}
 ```
 
-All endpoints accept a JSON body with `github_token` field.
+All endpoints accept a JSON body with optional `github_token` field (required for private repos).
 
 ## API Usage Examples
 
@@ -129,12 +131,17 @@ curl http://localhost:8000/health
 # Fetch PRs with summaries
 curl -X POST http://localhost:8000/api/v1/repos/facebook/react/pulls \
   -H "Content-Type: application/json" \
-  -d '{"github_token": "ghp_your_token_here"}'
+  -d '{"github_token": ""}'
+
+# Fetch PRs with streaming (SSE)
+curl -N -X POST http://localhost:8000/api/v1/repos/facebook/react/pulls/stream \
+  -H "Content-Type: application/json" \
+  -d '{"github_token": ""}'
 
 # Single PR summary
 curl -X POST http://localhost:8000/api/v1/repos/facebook/react/pulls/123 \
   -H "Content-Type: application/json" \
-  -d '{"github_token": "ghp_your_token_here"}'
+  -d '{"github_token": ""}'
 ```
 
 ## Deployment
@@ -194,6 +201,8 @@ NEXT_PUBLIC_API_URL=http://localhost:8000
 - **Risk Tags**: Automatic detection of breaking changes, security issues, performance impacts, etc.
 - **Test Checklists**: AI-generated test suggestions for each PR
 - **Issue Analysis**: Priority assessment and action items for issues
+- **SSE Streaming**: Results appear incrementally as each summary completes
+- **No Token Required**: Works with public repos without a GitHub token
 - **Copy to Clipboard**: Easy sharing of summaries
 - **Recent Repos**: Quick access to previously viewed repositories
 
